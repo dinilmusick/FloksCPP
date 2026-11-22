@@ -80,6 +80,35 @@ public:
     if(!current_.nodes.count(id)) throw std::out_of_range("missing node");
     checkpoint(); current_.nodes.at(id).position=p;
   }
+  void move_selection(Point delta) {
+    if(!std::isfinite(delta.x)||!std::isfinite(delta.y)) throw std::invalid_argument("invalid graph displacement");
+    if(current_.selected.empty()) return;
+    for(const auto& id:current_.selected) {
+      const auto& old=current_.nodes.at(id).position;
+      if(!std::isfinite(old.x+delta.x)||!std::isfinite(old.y+delta.y))
+        throw std::invalid_argument("graph displacement overflow");
+    }
+    checkpoint();
+    for(const auto& id:current_.selected) {
+      auto& xy=current_.nodes.at(id).position;
+      xy.x+=delta.x;xy.y+=delta.y;
+    }
+  }
+  void snap_selection(double grid) {
+    if(!std::isfinite(grid)||grid<=0)throw std::invalid_argument("invalid graph snap grid");
+    if(current_.selected.empty())return;
+    for(const auto& id:current_.selected) {
+      const auto& xy=current_.nodes.at(id).position;
+      if(!std::isfinite(std::round(xy.x/grid)*grid)||!std::isfinite(std::round(xy.y/grid)*grid))
+        throw std::invalid_argument("graph snap overflow");
+    }
+    checkpoint();
+    for(const auto& id:current_.selected) {
+      auto& xy=current_.nodes.at(id).position;
+      xy.x=std::round(xy.x/grid)*grid;
+      xy.y=std::round(xy.y/grid)*grid;
+    }
+  }
   void remove_node(const std::string& id) {
     if(!current_.nodes.count(id)) throw std::out_of_range("missing node");
     checkpoint(); current_.nodes.erase(id); current_.selected.erase(id);
@@ -102,6 +131,15 @@ public:
   void connect(Link l) {
     if(l.id.empty()||current_.links.count(l.id)||!can_connect(l.from_node,l.from_port,l.to_node,l.to_port)) throw std::invalid_argument("illegal connection");
     checkpoint(); current_.links.emplace(l.id,std::move(l));
+  }
+  void rewire(const std::string& link_id, Link candidate) {
+    if(!current_.links.count(link_id))throw std::out_of_range("missing link to rewire");
+    if(candidate.id!=link_id)throw std::invalid_argument("rewire must preserve connection id");
+    Graph proposed=*this;
+    proposed.current_.links.erase(link_id);
+    if(!proposed.can_connect(candidate.from_node,candidate.from_port,candidate.to_node,candidate.to_port))
+      throw std::invalid_argument("illegal graph rewire");
+    checkpoint();current_.links.at(link_id)=std::move(candidate);
   }
   void disconnect(const std::string& id) {
     if(!current_.links.count(id)) throw std::out_of_range("missing connection");

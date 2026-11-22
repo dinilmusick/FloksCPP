@@ -56,22 +56,32 @@ inline Graph deserialize_graph(const std::string& text) {
   return g;
 }
 inline std::string serialize_roll(const PianoRoll& roll) {
-  const auto loop=roll.loop();std::ostringstream out;out<<std::setprecision(17);
-  out<<"FLOKS_ROLL1 "<<roll.playhead()<<' '<<loop.start<<' '<<loop.end<<' '<<loop.enabled<<' '
-     <<roll.notes().size()<<' '<<roll.markers().size()<<'\n';
+  const auto loop=roll.loop();const auto meter=roll.meter();
+  std::ostringstream out;out<<std::setprecision(17);
+  out<<"FLOKS_ROLL2 "<<roll.playhead()<<' '<<loop.start<<' '<<loop.end<<' '<<loop.enabled<<' '
+     <<roll.notes().size()<<' '<<roll.markers().size()<<' '<<meter.numerator<<' '<<meter.denominator
+     <<' '<<roll.bpm()<<' '<<roll.selection().size()<<'\n';
   for(const auto& [id,n]:roll.notes()) {
     (void)id;out<<"N "<<std::quoted(n.id)<<' '<<n.pitch<<' '<<n.start<<' '<<n.length<<' '<<n.velocity<<'\n';
   }
   for(const auto& [id,m]:roll.markers()) {
     (void)id;out<<"M "<<std::quoted(m.id)<<' '<<std::quoted(m.label)<<' '<<m.beat<<'\n';
   }
+  for(const auto& id:roll.selection())out<<"S "<<std::quoted(id)<<'\n';
   return out.str();
 }
 inline PianoRoll deserialize_roll(const std::string& text) {
-  std::istringstream in(text);std::string version;double playhead,ls,le;int enabled;std::size_t nn,nm;
-  if(!(in>>version>>playhead>>ls>>le>>enabled>>nn>>nm)||version!="FLOKS_ROLL1"||nn>100000||nm>10000||(enabled!=0&&enabled!=1))
+  std::istringstream in(text);std::string version;double playhead,ls,le;int enabled;std::size_t nn,nm,ns=0;
+  if(!(in>>version)|| (version!="FLOKS_ROLL1" && version!="FLOKS_ROLL2"))
+    throw std::invalid_argument("invalid roll version");
+  if(!(in>>playhead>>ls>>le>>enabled>>nn>>nm)||nn>100000||nm>10000||(enabled!=0&&enabled!=1))
     throw std::invalid_argument("invalid roll header");
+  int numerator=4,denominator=4;double bpm=120;
+  if(version=="FLOKS_ROLL2" && !(in>>numerator>>denominator>>bpm>>ns))
+    throw std::invalid_argument("invalid roll meter/tempo header");
+  if(ns>nn)throw std::invalid_argument("invalid roll selection count");
   PianoRoll r;
+  r.set_meter({numerator,denominator});r.set_bpm(bpm);
   for(std::size_t i=0;i<nn;++i){char tag;MidiNote n;
     if(!(in>>tag>>std::quoted(n.id)>>n.pitch>>n.start>>n.length>>n.velocity)||tag!='N')throw std::invalid_argument("invalid MIDI note data");
     r.insert(std::move(n));
@@ -79,6 +89,10 @@ inline PianoRoll deserialize_roll(const std::string& text) {
   for(std::size_t i=0;i<nm;++i){char tag;Marker m;
     if(!(in>>tag>>std::quoted(m.id)>>std::quoted(m.label)>>m.beat)||tag!='M')throw std::invalid_argument("invalid MIDI marker data");
     r.add_marker(std::move(m));
+  }
+  for(std::size_t i=0;i<ns;++i){char tag;std::string id;
+    if(!(in>>tag>>std::quoted(id))||tag!='S'||r.selection().count(id))throw std::invalid_argument("invalid note selection");
+    r.select_note(id);
   }
   r.set_loop({ls,le,bool(enabled)});r.seek(playhead);
   in>>std::ws;if(in.peek()!=std::char_traits<char>::eof())throw std::invalid_argument("trailing roll data");

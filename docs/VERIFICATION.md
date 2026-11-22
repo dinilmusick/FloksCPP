@@ -39,3 +39,15 @@ GCC and Clang Debug/Release: 6/6 CTests in each configuration. GCC and Clang Add
 The FrnlCPP-required CMake option `-DFLOKSCPP_REQUIRE_FRNL=ON` is set in CI, so missing upstream installation must fail configuration rather than silently skip its integration test.
 
 These are candidate-only results; the actual installed FrnlCPP C++ consumer, Windows/MSVC, macOS, GitHub PR CI, and merged-main verification remain separate gates.
+
+
+## Authoritative provider certification and Wave 3 editor continuation
+
+Earlier sections preserve a **local-only historical checkpoint**, not current repository release status. These independently observed provider records supersede those checkpoints:
+
+- Native foundation PR #2 at head f4db7f0b2b3d576a45621353ffe58a3ab5d6dcae, 8/8 checks successful: https://github.com/dinilmusick/FloksCPP/actions/runs/45006563713
+- Independently verified merged main 1b30581f64471d28269949db66da4034b76d4d55, 8/8 checks successful: https://github.com/dinilmusick/FloksCPP/actions/runs/45006701201
+- The workflow installed pinned FrnlCPP, tested the Frnl integration and independent installed package consumer on Linux GCC/Clang Debug/Release, macOS Clang, and Windows/MSVC; GNU and Clang sanitizers passed.
+- Editor parity extension: seven native suites across GCC/Clang Debug/Release and GNU/Clang sanitizer configurations = 42/42 local passing tests. Installed-core consumer passes independently. PR #4 https://github.com/dinilmusick/FloksCPP/pull/4 requires fresh exact-head and post-main CI certification.
+
+The native semantic model deliberately excludes browser/React/DOM implementations; docs/PARITY.md inventories known gaps.

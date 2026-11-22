@@ -19,9 +19,11 @@ struct MidiNote {
 };
 struct Marker { std::string id, label; double beat{0}; };
 struct Loop { double start{0}, end{4}; bool enabled{false}; };
+struct Meter { int numerator{4}, denominator{4}; };
+
 
 class PianoRoll {
-  struct State { std::map<std::string,MidiNote> notes; std::map<std::string,Marker> markers; Loop loop; double playhead{0}; };
+  struct State { std::map<std::string,MidiNote> notes; std::map<std::string,Marker> markers; std::set<std::string> selected; Loop loop; Meter meter; double bpm{120}; double playhead{0}; };
   State state_;
   std::vector<State> undo_,redo_;
   double pixels_per_beat_{64},pixels_per_pitch_{12};
@@ -35,6 +37,9 @@ public:
   const std::map<std::string,MidiNote>& notes() const {return state_.notes;}
   const std::map<std::string,Marker>& markers() const {return state_.markers;}
   Loop loop() const {return state_.loop;}
+  Meter meter() const {return state_.meter;}
+  double bpm() const {return state_.bpm;}
+  const std::set<std::string>& selection() const {return state_.selected;}
   double playhead() const {return state_.playhead;}
   void insert(MidiNote n) {
     validate_note(n); if(state_.notes.count(n.id)) throw std::invalid_argument("duplicate MIDI note");
@@ -44,9 +49,28 @@ public:
     if(!state_.notes.count(id)) throw std::out_of_range("unknown MIDI note");
     MidiNote n{id,pitch,start,length,velocity};validate_note(n);checkpoint();state_.notes[id]=n;
   }
+  void move_note(const std::string& id,int pitch,double start) {
+    if(!state_.notes.count(id))throw std::out_of_range("note missing");
+    auto n=state_.notes.at(id);n.pitch=pitch;n.start=start;validate_note(n);
+    checkpoint();state_.notes[id]=std::move(n);
+  }
+  void resize_note(const std::string& id,double length) {
+    if(!state_.notes.count(id))throw std::out_of_range("note missing");
+    auto n=state_.notes.at(id);n.length=length;validate_note(n);
+    checkpoint();state_.notes[id]=std::move(n);
+  }
+  void select_note(const std::string& id,bool selected=true) {
+    if(!state_.notes.count(id))throw std::out_of_range("note missing");
+    if(state_.selected.count(id)==static_cast<std::size_t>(selected))return;
+    checkpoint();if(selected)state_.selected.insert(id);else state_.selected.erase(id);
+  }
+  void clear_note_selection() {
+    if(state_.selected.empty())return;
+    checkpoint();state_.selected.clear();
+  }
   void erase(const std::string& id) {
     if(!state_.notes.count(id)) throw std::out_of_range("unknown MIDI note");
-    checkpoint();state_.notes.erase(id);
+    checkpoint();state_.notes.erase(id);state_.selected.erase(id);
   }
   void add_marker(Marker m) {
     if(m.id.empty()||!std::isfinite(m.beat)||m.beat<0||state_.markers.count(m.id)) throw std::invalid_argument("invalid marker");
@@ -64,6 +88,33 @@ public:
   void remove_marker(const std::string& id) {
     if(!state_.markers.count(id)) throw std::out_of_range("marker missing");
     checkpoint();state_.markers.erase(id);
+  }
+  void set_meter(Meter meter) {
+    if(meter.numerator<1||meter.numerator>32||meter.denominator<1||meter.denominator>64||
+       (meter.denominator & (meter.denominator-1))!=0)
+      throw std::invalid_argument("invalid time signature");
+    checkpoint();state_.meter=meter;
+  }
+  void set_bpm(double value) {
+    if(!std::isfinite(value)||value<=0||value>1000)throw std::invalid_argument("invalid tempo");
+    checkpoint();state_.bpm=value;
+  }
+  double beats_per_bar() const {return state_.meter.numerator*4.0/state_.meter.denominator;}
+  double beat_to_bar(double beat) const {
+    if(!std::isfinite(beat)||beat<0)throw std::invalid_argument("invalid beat");
+    return beat/beats_per_bar();
+  }
+  double bar_to_beat(double bar) const {
+    if(!std::isfinite(bar)||bar<0||!std::isfinite(bar*beats_per_bar()))throw std::invalid_argument("invalid bar");
+    return bar*beats_per_bar();
+  }
+  double beat_to_seconds(double beat) const {
+    if(!std::isfinite(beat)||beat<0||!std::isfinite(beat*60.0/state_.bpm))throw std::invalid_argument("invalid beat");
+    return beat*60.0/state_.bpm;
+  }
+  double seconds_to_beat(double sec) const {
+    if(!std::isfinite(sec)||sec<0||!std::isfinite(sec*state_.bpm/60.0))throw std::invalid_argument("invalid seconds");
+    return sec*state_.bpm/60.0;
   }
   void set_loop(Loop v) {
     if(!std::isfinite(v.start)||!std::isfinite(v.end)||v.start<0||v.end<=v.start) throw std::invalid_argument("invalid loop");
